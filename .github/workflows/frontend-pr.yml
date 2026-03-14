@@ -1,0 +1,30 @@
+name: Frontend PR
+
+on:
+  workflow_call:
+    inputs:
+      dockerfile:
+        description: Path to Dockerfile
+        type: string
+        default: "Dockerfile"
+
+jobs:
+  version:
+    uses: Qteb-LLC/pipeline/.github/workflows/version.yml@main
+    with:
+      branch: ${{ github.head_ref }}
+
+  publish:
+    needs: [version]
+    uses: Qteb-LLC/pipeline/.github/workflows/publish-web.yml@main
+    with:
+      dockerfile: ${{ inputs.dockerfile }}
+      version: ${{ needs.version.outputs.semver }}
+
+  deploy-preview:
+    needs: [publish, version]
+    uses: Qteb-LLC/pipeline/.github/workflows/deploy.yml@main
+    with:
+      environment: preview
+      version: ${{ needs.version.outputs.semver }}
+    secrets: inherit

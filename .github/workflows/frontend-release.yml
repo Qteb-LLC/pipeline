@@ -1,0 +1,9 @@
+name: Frontend Release
+
+on:
+  workflow_call:
+
+jobs:
+  release:
+    uses: Qteb-LLC/pipeline/.github/workflows/release.yml@main
+    secrets: inherit

@@ -1,0 +1,39 @@
+name: Backend PR
+
+on:
+  workflow_call:
+    inputs:
+      dockerfile:
+        description: Path to Dockerfile
+        type: string
+        default: "docker/Dockerfile"
+      needs-postgres:
+        description: Whether tests need PostgreSQL
+        type: boolean
+        default: true
+
+jobs:
+  version:
+    uses: Qteb-LLC/pipeline/.github/workflows/version.yml@main
+    with:
+      branch: ${{ github.head_ref }}
+
+  lint-test:
+    uses: Qteb-LLC/pipeline/.github/workflows/lint-test.yml@main
+    with:
+      needs-postgres: ${{ inputs.needs-postgres }}
+
+  publish:
+    needs: [version, lint-test]
+    uses: Qteb-LLC/pipeline/.github/workflows/publish-python.yml@main
+    with:
+      dockerfile: ${{ inputs.dockerfile }}
+      version: ${{ needs.version.outputs.semver }}
+
+  deploy-preview:
+    needs: [publish, version]
+    uses: Qteb-LLC/pipeline/.github/workflows/deploy.yml@main
+    with:
+      environment: preview
+      version: ${{ needs.version.outputs.semver }}
+    secrets: inherit
