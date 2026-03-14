@@ -236,3 +236,228 @@ Developer creates PR
 5. **lint-test.yml** — Python-специфичный, для web (Node.js) нет аналога
 6. **version.yml** — ожидает `GitVersion.yml` в корне вызывающего репо
 7. **Один bot+web image** — оба собираются в одном pipeline, привязаны к одному репо
+
+---
+
+## Анализ: адаптация под мультирепо
+
+### Текущее распределение по репозиториям
+
+| Что | Где было (монорепо) | Где сейчас |
+|-----|-------------------|------------|
+| Workflow-файлы | `.github/workflows/` | `Qteb-LLC/pipeline` |
+| Composite action | `.github/actions/setup-python-uv/` | `Qteb-LLC/pipeline` |
+| `ansible/`, `utils/`, `conf/` | корень монорепо | `Qteb-LLC/conf` |
+| `docker/Dockerfile` (bot) | `docker/Dockerfile` | `Qteb-LLC/bot/docker/Dockerfile` |
+| `docker/Dockerfile.api` | `docker/Dockerfile.api` | `Qteb-LLC/api/docker/Dockerfile.api` |
+| `front/Dockerfile` | `front/Dockerfile` | `Qteb-LLC/web/Dockerfile` |
+| `GitVersion.yml` | корень монорепо | в каждом code-репо |
+| Исходный код bot | `src/` | `Qteb-LLC/bot` |
+| Исходный код api | `src/` | `Qteb-LLC/api` |
+| Исходный код web | `front/` | `Qteb-LLC/web` |
+
+### Проблема 1: Локальные ссылки между workflows
+
+**Что сломано:**
+
+Workflow `build.yml` вызывает:
+```yaml
+uses: ./.github/workflows/version.yml
+uses: ./.github/workflows/lint-test.yml
+uses: ./.github/workflows/deploy.yml
+```
+
+В мультирепо code-репо (например, `Qteb-LLC/api`) вызывает workflow из pipeline-репо:
+```yaml
+uses: Qteb-LLC/pipeline/.github/workflows/build.yml@main
+```
+
+При этом `build.yml` выполняется в контексте вызывающего репо (`api`). Ссылка `uses: ./.github/workflows/version.yml` будет искать `version.yml` в `api`-репо, а не в `pipeline`-репо — **файла там нет, workflow упадёт.**
+
+**Затронуты:**
+- `build.yml` → ссылается на `version.yml`, `lint-test.yml`, `deploy.yml`
+- `deploy-tag.yml` → ссылается на `version.yml`, `lint-test.yml`, `deploy.yml`
+- `release.yml` → ссылается на `version.yml`
+
+**Что нужно сделать:**
+
+Заменить все внутренние ссылки на абсолютные:
+```yaml
+# Было (монорепо)
+uses: ./.github/workflows/version.yml
+
+# Нужно (мультирепо)
+uses: Qteb-LLC/pipeline/.github/workflows/version.yml@main
+```
+
+### Проблема 2: Composite action — локальная ссылка
+
+**Что сломано:**
+
+`lint-test.yml` использует:
+```yaml
+uses: ./.github/actions/setup-python-uv
+```
+
+Когда `lint-test.yml` вызывается кросс-репо, `.` указывает на вызывающий репо — action там нет.
+
+**Затронуты:**
+- `lint-test.yml` — 4 job'а ссылаются на `./.github/actions/setup-python-uv`
+
+**Что нужно сделать:**
+
+Заменить на абсолютную ссылку:
+```yaml
+# Было
+uses: ./.github/actions/setup-python-uv
+
+# Нужно
+uses: Qteb-LLC/pipeline/.github/actions/setup-python-uv@main
+```
+
+### Проблема 3: deploy.yml — checkout не того репо
+
+**Что сломано:**
+
+`deploy.yml` делает:
+```yaml
+- uses: actions/checkout@v4
+```
+
+Это чекаутит вызывающий репо (code-репо). Но deploy ожидает файлы, которые теперь в `Qteb-LLC/conf`:
+- `ansible/inventory.yaml`, `ansible/play.yml`, `ansible/requirements.yml`
+- `utils/decrypt.sh`
+- `conf/{environment}/id_rsa`
+
+**Что нужно сделать:**
+
+Заменить checkout на checkout `Qteb-LLC/conf`:
+```yaml
+- uses: actions/checkout@v4
+  with:
+    repository: Qteb-LLC/conf
+    token: ${{ secrets.CONF_PAT || github.token }}
+```
+
+Также нужен PAT (`CONF_PAT`) или deploy key, т.к. `conf` — приватный репозиторий, а `GITHUB_TOKEN` из вызывающего репо не имеет доступа к другому репозиторию.
+
+### Проблема 4: build.yml и deploy-tag.yml — монолитная сборка
+
+**Что сломано:**
+
+`build.yml` содержит два job'а сборки:
+- `build` — собирает bot из `docker/Dockerfile`
+- `build-web` — собирает web из `front/Dockerfile`
+
+В мультирепо каждый сервис — отдельный репозиторий. Не нужно собирать web, когда пушим в bot.
+
+**Что нужно сделать:**
+
+Два варианта:
+
+**Вариант A:** Оставить `build.yml` и `deploy-tag.yml` как trigger-шаблоны, но **не вызывать их кросс-репо**. Вместо этого каждый code-репо имеет свой `.github/workflows/pr.yml` и `deploy-tag.yml`, которые вызывают отдельные reusable workflows (`version.yml`, `lint-test.yml`, `deploy.yml`).
+
+**Вариант B:** Переделать `build.yml` в reusable workflow с параметрами `dockerfile`, `context`, `image-suffix` и убрать job `build-web`.
+
+Рекомендуется **вариант A** — trigger workflows живут в code-репо, reusable workflows (version, lint-test, deploy) живут в pipeline. Причина: trigger workflows содержат бизнес-логику конкретного сервиса (какой Dockerfile, какие build args, deploy preview или нет), и эта логика у каждого сервиса своя.
+
+При варианте A из pipeline-репо **удаляются** `build.yml` и `deploy-tag.yml` (они становятся ненужными), а сборка Docker выносится в отдельный reusable workflow.
+
+### Проблема 5: lint-test.yml — только Python
+
+**Что сломано:**
+
+`lint-test.yml` запускает ruff + mypy + pytest. Для `Qteb-LLC/web` (Node.js) нужен другой pipeline: lint + build.
+
+**Что нужно сделать:**
+
+Создать `lint-test-node.yml` (или `ci-node.yml`) с:
+- `npm ci`
+- `npm run lint`
+- `npm run build`
+
+### Проблема 6: lint-test.yml — test job зависимости
+
+**Что сломано:**
+
+Job `test` в `lint-test.yml` поднимает PostgreSQL service container и устанавливает env-переменные:
+```yaml
+BOT_DATABASE_HOST, BOT_DATABASE_PORT, BOT_DATABASE_NAME, ...
+BOT_TELEGRAM_BOT_TOKEN, BOT_LITELLM_*, BOT_CLOUDPAYMENTS_*
+```
+
+Эти переменные специфичны для API-репо. Bot-репо не использует PostgreSQL, и ему не нужны `BOT_DATABASE_*` переменные.
+
+**Что нужно сделать:**
+
+Параметризовать `lint-test.yml`:
+- Input `needs-postgres` (boolean, default true) — запускать ли PostgreSQL service
+- Input `env-vars` или передавать через secrets — какие env-переменные нужны
+
+Или: разделить на `lint.yml` (ruff + mypy, без зависимостей) и `test.yml` (pytest, с настраиваемыми сервисами).
+
+### Проблема 7: version.yml — GitVersion.yml
+
+**Что сломано:**
+
+`version.yml` использует:
+```yaml
+useConfigFile: true
+configFilePath: GitVersion.yml
+```
+
+`GitVersion.yml` ожидается в корне **вызывающего** репо (т.к. checkout делает вызывающий репо). Каждый code-репо должен иметь свой `GitVersion.yml`.
+
+**Что нужно сделать:**
+
+Каждый code-репо (`bot`, `api`, `web`) должен содержать `GitVersion.yml` в корне. Содержимое может быть одинаковым — скопировать из монорепо.
+
+### Итого: план доработок
+
+| # | Файл | Изменение | Тип |
+|---|------|-----------|-----|
+| 1 | `lint-test.yml` | Заменить `uses: ./.github/actions/setup-python-uv` → абсолютный путь | Ссылки |
+| 2 | `lint-test.yml` | Добавить inputs для параметризации (postgres, env vars) | Параметризация |
+| 3 | `deploy.yml` | Checkout `Qteb-LLC/conf` вместо вызывающего репо | Checkout |
+| 4 | `release.yml` | Заменить `uses: ./.github/workflows/version.yml` → абсолютный путь | Ссылки |
+| 5 | `build.yml` | Удалить (заменяется reusable `build-docker.yml`) | Удаление |
+| 6 | `deploy-tag.yml` | Удалить (trigger-логика переезжает в code-репо) | Удаление |
+| 7 | Новый `build-docker.yml` | Reusable: параметризованная сборка Docker image | Новый |
+| 8 | Новый `ci-node.yml` | Reusable: lint + build для Node.js | Новый |
+| 9 | Каждый code-репо | Добавить `GitVersion.yml` | Конфиг |
+| 10 | Каждый code-репо | Добавить trigger workflows (`pr.yml`, `release.yml`, `deploy-tag.yml`) | Callers |
+
+### Что остаётся в pipeline-репо (после доработок)
+
+```
+.github/
+├── actions/
+│   └── setup-python-uv/action.yml    # Без изменений
+└── workflows/
+    ├── version.yml        # Без изменений (уже reusable)
+    ├── lint-test.yml      # Доработка: абсолютные ссылки, параметризация
+    ├── ci-node.yml        # Новый: Node.js CI
+    ├── build-docker.yml   # Новый: параметризованная Docker сборка
+    ├── deploy.yml         # Доработка: checkout Qteb-LLC/conf
+    └── release.yml        # Доработка: абсолютные ссылки
+```
+
+`build.yml` и `deploy-tag.yml` удаляются — их логика переезжает в trigger workflows в каждом code-репо.
+
+### Что появляется в каждом code-репо
+
+```
+# Qteb-LLC/bot, Qteb-LLC/api
+.github/workflows/
+├── pr.yml           # on: pull_request → version + lint-test + build-docker + deploy preview
+├── release.yml      # on: push main → release (создать тег)
+└── deploy-tag.yml   # on: push tag → lint-test + build-docker + deploy preview + prod
+GitVersion.yml       # Конфиг GitVersion
+
+# Qteb-LLC/web
+.github/workflows/
+├── pr.yml           # on: pull_request → version + ci-node + build-docker + deploy preview
+├── release.yml      # on: push main → release
+└── deploy-tag.yml   # on: push tag → ci-node + build-docker + deploy preview + prod
+GitVersion.yml
+```
