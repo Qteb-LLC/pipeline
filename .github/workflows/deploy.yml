@@ -11,6 +11,10 @@ on:
         description: Version to deploy
         required: true
         type: string
+      services:
+        description: Comma-separated list of docker-compose services to pull and recreate (e.g. "api,migrations")
+        required: true
+        type: string
 
 env:
   ANSIBLE_HOST_KEY_CHECKING: "false"
@@ -79,12 +83,15 @@ jobs:
           CI_REGISTRY_USER: ${{ github.actor }}
           CI_REGISTRY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ inputs.version }}
+          DEPLOY_SERVICES: ${{ inputs.services }}
         run: |
           export PATH="$PWD/.cache/bin:$PATH"
           CI_REGISTRY_IMAGE=$(echo "$CI_REGISTRY_IMAGE" | tr '[:upper:]' '[:lower:]')
           SSH_KEY="conf/${{ inputs.environment }}/id_rsa"
           chmod 600 "$SSH_KEY"
           ansible-playbook -i ansible/inventory.yaml ansible/play.yml \
-            -e "env=${{ inputs.environment }}" --private-key="$SSH_KEY"
+            -e "env=${{ inputs.environment }}" \
+            -e "deploy_services=${{ inputs.services }}" \
+            --private-key="$SSH_KEY"
 
     timeout-minutes: 20

@@ -11,6 +11,10 @@ on:
         description: Whether tests need PostgreSQL
         type: boolean
         default: true
+      services:
+        description: Docker-compose services to deploy (comma-separated)
+        type: string
+        default: "bot,api,migrations"
 
 jobs:
   version:
@@ -36,4 +40,5 @@ jobs:
     with:
       environment: preview
       version: ${{ needs.version.outputs.semver }}
+      services: ${{ inputs.services }}
     secrets: inherit
