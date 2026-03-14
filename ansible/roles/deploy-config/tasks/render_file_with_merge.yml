@@ -1,0 +1,83 @@
+---
+# Render a single configuration file with hierarchical merge
+# Required variables:
+#   file_name - the name of the file (e.g., "bot.env", "docker-compose.yml")
+#   shared_file_path - path to shared version of the file
+#   env_file_path - path to env-specific version of the file
+#   has_shared - boolean, whether shared file exists
+#   has_env - boolean, whether env-specific file exists
+
+- name: Determine file type for {{ file_name }}
+  ansible.builtin.set_fact:
+    is_env_file: "{{ file_name.endswith('.env') or file_name == '.env' }}"
+    is_yaml_file: "{{ file_name.endswith('.yml') or file_name.endswith('.yaml') }}"
+
+# Load shared file content (base layer)
+- name: Load shared file content for {{ file_name }}
+  ansible.builtin.set_fact:
+    shared_content_raw: "{{ lookup('template', shared_file_path) }}"
+  when: has_shared | bool
+
+- name: Parse shared YAML content for {{ file_name }}
+  ansible.builtin.set_fact:
+    shared_content: "{{ shared_content_raw | from_yaml }}"
+  when: has_shared | bool
+
+- name: Initialize content from shared for {{ file_name }}
+  ansible.builtin.set_fact:
+    merged_content: "{{ shared_content | default({}) }}"
+  when: has_shared | bool
+
+- name: Initialize empty content for {{ file_name }}
+  ansible.builtin.set_fact:
+    merged_content: {}
+  when: not (has_shared | bool)
+
+# Load env-specific file content and merge (override layer)
+- name: Load env file content for {{ file_name }}
+  ansible.builtin.set_fact:
+    env_content_raw: "{{ lookup('template', env_file_path) }}"
+  when: has_env | bool
+
+- name: Parse env YAML content for {{ file_name }}
+  ansible.builtin.set_fact:
+    env_content: "{{ env_content_raw | from_yaml }}"
+  when: has_env | bool
+
+- name: Merge env content into base for {{ file_name }}
+  ansible.builtin.set_fact:
+    merged_content: "{{ merged_content | combine(env_content, recursive=true) }}"
+  when: has_env | bool
+
+# For .env files - render as KEY=VALUE format
+- name: Render .env file {{ file_name }}
+  when: is_env_file | bool
+  block:
+    - name: Create .env content for {{ file_name }}
+      ansible.builtin.set_fact:
+        env_lines: "{{ env_lines | default([]) + [item.key ~ '=' ~ (item.value | string)] }}"
+      loop: "{{ merged_content | dict2items }}"
+      loop_control:
+        label: "{{ item.key }}"
+
+    - name: Write .env file {{ file_name }}
+      ansible.builtin.copy:
+        content: "{{ env_lines | join('\n') }}\n"
+        dest: "{{ deploy_local_dir }}/{{ file_name }}"
+        mode: "0644"
+      delegate_to: localhost
+      become: false
+
+    - name: Reset env_lines
+      ansible.builtin.set_fact:
+        env_lines: []
+
+# For .yml/.yaml files - render as YAML (preserve key order)
+- name: Render YAML file {{ file_name }}
+  when: is_yaml_file | bool
+  ansible.builtin.copy:
+    content: "{{ merged_content | to_nice_yaml(indent=2, sort_keys=false) }}"
+    dest: "{{ deploy_local_dir }}/{{ file_name }}"
+    mode: "0644"
+  delegate_to: localhost
+  become: false

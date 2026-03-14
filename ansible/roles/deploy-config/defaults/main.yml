@@ -1,0 +1,32 @@
+---
+# Default variables for deploy-config role
+
+# Required: Name of the application (e.g., "bot")
+# deploy_config_name: bot
+
+# Required: Environment (test/preview/prod), passed from GitLab CI via ENV variable
+# env: test
+
+# Path on server where files will be deployed
+deploy_target_path: "/opt/{{ deploy_config_name }}"
+
+# Stop containers before starting new ones
+# Set to false for rolling updates (recommended for zero-downtime deploys)
+deploy_stop_before_start: false
+
+# Local directory for rendered files (relative to playbook)
+deploy_local_dir: "{{ playbook_dir }}/../deploy"
+
+default_app_version: "latest"
+
+# Services to pull and recreate (comma-separated string, parsed to list)
+# Passed from CI: -e "deploy_services=api,migrations"
+deploy_services: "bot,api,migrations,web"
+
+# Version variable name to update in .env (e.g. API_VERSION, BOT_VERSION, WEB_VERSION)
+# Passed from CI: -e "deploy_version_var=API_VERSION"
+deploy_version_var: ""
+
+# Docker image to pull (e.g. ghcr.io/qteb-llc/api)
+# Passed from CI: -e "deploy_image=ghcr.io/qteb-llc/api"
+deploy_image: ""

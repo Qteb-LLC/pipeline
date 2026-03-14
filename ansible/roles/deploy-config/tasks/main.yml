@@ -1,0 +1,307 @@
+---
+# Main tasks for deploy-config role
+#
+# Tags:
+#   render - only render configs locally (no deploy)
+#   deploy - full deploy to server
+#   debug  - render + show contents (no cleanup)
+#
+# Configuration hierarchy (lower overrides higher):
+#   1. conf/shared/ - base shared configuration
+#   2. conf/<env>/  - environment-specific overrides
+#
+# Note: credentials.yaml is ONLY loaded from conf/<env>/ (never from shared)
+#
+# Examples:
+#   ansible-playbook play.yml -e "env=test" --tags render    # render only
+#   ansible-playbook play.yml -e "env=test" --tags debug     # render + show
+#   ansible-playbook play.yml -e "env=test"                  # full deploy
+
+# 1. Calculate paths dynamically
+- name: Set config paths
+  ansible.builtin.set_fact:
+    env_config_dir: "{{ playbook_dir }}/../conf/{{ env }}"
+    shared_config_root: "{{ playbook_dir }}/../conf/shared"
+    deploy_config_dir: "{{ playbook_dir }}/../conf/{{ env }}"
+    shared_config_dir: "{{ playbook_dir }}/../conf/shared"
+  tags: [render, deploy, debug]
+
+- name: Ensure local deploy directory exists
+  ansible.builtin.file:
+    path: "{{ deploy_local_dir }}"
+    state: directory
+    mode: "0755"
+  delegate_to: localhost
+  become: false
+  tags: [render, deploy, debug]
+
+# 2. Load shared endpoints.yaml (base layer)
+- name: Check if shared endpoints.yaml exists
+  ansible.builtin.stat:
+    path: "{{ shared_config_root }}/endpoints.yaml"
+  register: shared_endpoints_stat
+  delegate_to: localhost
+  become: false
+  tags: [render, deploy, debug]
+
+- name: Load shared endpoints configuration
+  ansible.builtin.include_vars:
+    file: "{{ shared_config_root }}/endpoints.yaml"
+    name: shared_endpoints_data
+  delegate_to: localhost
+  become: false
+  when: shared_endpoints_stat.stat.exists
+  tags: [render, deploy, debug]
+
+- name: Initialize endpoints from shared
+  ansible.builtin.set_fact:
+    endpoints: "{{ shared_endpoints_data.endpoints | default({}) }}"
+  tags: [render, deploy, debug]
+
+# 3. Load env-specific endpoints.yaml and merge (override layer)
+- name: Check if env-specific endpoints.yaml exists
+  ansible.builtin.stat:
+    path: "{{ env_config_dir }}/endpoints.yaml"
+  register: env_endpoints_stat
+  delegate_to: localhost
+  become: false
+  tags: [render, deploy, debug]
+
+- name: Load env-specific endpoints configuration
+  ansible.builtin.include_vars:
+    file: "{{ env_config_dir }}/endpoints.yaml"
+    name: env_endpoints_data
+  delegate_to: localhost
+  become: false
+  when: env_endpoints_stat.stat.exists
+  tags: [render, deploy, debug]
+
+- name: Merge env-specific endpoints (deep merge)
+  ansible.builtin.set_fact:
+    endpoints: "{{ endpoints | combine(env_endpoints_data.endpoints | default({}), recursive=true) }}"
+  when: env_endpoints_stat.stat.exists
+  tags: [render, deploy, debug]
+
+# 4. Load credentials ONLY from env (never from shared)
+- name: Load credentials configuration (env only)
+  ansible.builtin.include_vars:
+    file: "{{ env_config_dir }}/credentials.yaml"
+    name: credentials_data
+  delegate_to: localhost
+  become: false
+  tags: [render, deploy, debug]
+
+- name: Set credentials fact
+  ansible.builtin.set_fact:
+    credentials: "{{ credentials_data.credentials | default({}) }}"
+  tags: [render, deploy, debug]
+
+# 5. Set CI variables
+- name: Set CI environment variables
+  ansible.builtin.set_fact:
+    ci_registry: "{{ lookup('env', 'CI_REGISTRY') | default('ghcr.io', true) }}"
+    ci_registry_user: "{{ lookup('env', 'CI_REGISTRY_USER') | default('', true) }}"
+    ci_registry_password: "{{ lookup('env', 'CI_REGISTRY_PASSWORD') | default('', true) }}"
+    app_version: "{{ lookup('env', 'VERSION') | default(default_app_version, true) }}"
+  tags: [render, deploy, debug]
+
+# 6. Find all config files in shared directory (base layer)
+- name: Find shared config files
+  ansible.builtin.find:
+    paths: "{{ shared_config_dir }}"
+    file_type: file
+  register: shared_config_files
+  delegate_to: localhost
+  become: false
+  ignore_errors: true
+  tags: [render, deploy, debug]
+
+- name: Initialize shared config files list
+  ansible.builtin.set_fact:
+    shared_config_files_list: "{{ shared_config_files.files | default([]) }}"
+  tags: [render, deploy, debug]
+
+# 7. Find all config files in env-specific directory (override layer)
+- name: Find env-specific config files
+  ansible.builtin.find:
+    paths: "{{ deploy_config_dir }}"
+    file_type: file
+  register: env_config_files
+  delegate_to: localhost
+  become: false
+  tags: [render, deploy, debug]
+
+# 8. Build list of file names
+- name: Build env-specific file names list
+  ansible.builtin.set_fact:
+    env_file_names: "{{ env_config_files.files | map(attribute='path') | map('basename') | list }}"
+    shared_file_names: "{{ shared_config_files_list | map(attribute='path') | map('basename') | list }}"
+  tags: [render, deploy, debug]
+
+# 9. Build list of all unique file names (shared + env)
+- name: Build complete file names list
+  ansible.builtin.set_fact:
+    all_file_names: "{{ (shared_file_names + env_file_names) | unique | list }}"
+  tags: [render, deploy, debug]
+
+# 10. Render config files with hierarchy (shared first, then env override)
+- name: Render configuration files with hierarchy
+  ansible.builtin.include_tasks:
+    file: render_file_with_merge.yml
+    apply:
+      tags: [render, deploy, debug]
+  loop: "{{ all_file_names }}"
+  loop_control:
+    loop_var: file_name
+  vars:
+    shared_file_path: "{{ shared_config_dir }}/{{ file_name }}"
+    env_file_path: "{{ deploy_config_dir }}/{{ file_name }}"
+    has_shared: "{{ file_name in shared_file_names }}"
+    has_env: "{{ file_name in env_file_names }}"
+  tags: [render, deploy, debug]
+
+# 11. Debug output - show rendered files
+- name: Show rendered files location
+  ansible.builtin.debug:
+    msg: "Rendered files are in: {{ deploy_local_dir }}"
+  tags: [debug, never]
+
+- name: List rendered files
+  ansible.builtin.find:
+    paths: "{{ deploy_local_dir }}"
+    file_type: file
+  register: rendered_files
+  delegate_to: localhost
+  become: false
+  tags: [debug, never]
+
+- name: Show rendered file contents
+  ansible.builtin.debug:
+    msg: |
+      === {{ item.path | basename }} ===
+      {{ lookup('file', item.path) }}
+  loop: "{{ rendered_files.files }}"
+  loop_control:
+    label: "{{ item.path | basename }}"
+  tags: [debug, never]
+
+# 12. Create target directory on server
+- name: Ensure target directory exists on server
+  ansible.builtin.file:
+    path: "{{ deploy_target_path }}"
+    state: directory
+    mode: "0755"
+  become: true
+  tags: [deploy]
+
+# 13. Copy rendered files to server
+- name: Copy rendered files to server
+  ansible.builtin.copy:
+    src: "{{ deploy_local_dir }}/{{ item }}"
+    dest: "{{ deploy_target_path }}/{{ item }}"
+    mode: "0644"
+  loop: "{{ all_file_names }}"
+  become: true
+  tags: [deploy]
+
+# 14. Update service version in .env on server
+#     deploy_version_var (e.g. "API_VERSION") is set by the caller.
+#     Only the deployed service's version changes; others are untouched.
+- name: Ensure .env file exists on server
+  ansible.builtin.file:
+    path: "{{ deploy_target_path }}/.env"
+    state: touch
+    mode: "0644"
+    modification_time: preserve
+    access_time: preserve
+  become: true
+  when: deploy_version_var is defined and deploy_version_var != ''
+  tags: [deploy]
+
+- name: Update service version in .env
+  ansible.builtin.lineinfile:
+    path: "{{ deploy_target_path }}/.env"
+    regexp: "^{{ deploy_version_var }}="
+    line: "{{ deploy_version_var }}={{ app_version }}"
+    create: true
+    mode: "0644"
+  become: true
+  when: deploy_version_var is defined and deploy_version_var != ''
+  tags: [deploy]
+
+# 15. Docker login to Container Registry
+- name: Login to Container Registry
+  community.docker.docker_login:
+    registry_url: "{{ ci_registry }}"
+    username: "{{ ci_registry_user }}"
+    password: "{{ ci_registry_password }}"
+  when: ci_registry_user != '' and ci_registry_password != ''
+  become: true
+  no_log: true
+  tags: [deploy]
+
+# 15. Parse deploy_services string into list
+- name: Parse deploy services list
+  ansible.builtin.set_fact:
+    deploy_services_list: "{{ deploy_services.split(',') | map('trim') | select | list }}"
+  tags: [deploy]
+
+# 16. Pull image for the deployed service
+- name: Pull deployed service image
+  community.docker.docker_image:
+    name: "{{ deploy_image }}:{{ app_version }}"
+    source: pull
+    force_source: true
+  when: deploy_image is defined and deploy_image != ''
+  become: true
+  tags: [deploy]
+
+# 17. Stop existing containers
+- name: Stop existing containers
+  community.docker.docker_compose_v2:
+    project_src: "{{ deploy_target_path }}"
+    state: absent
+  when: deploy_stop_before_start
+  become: true
+  ignore_errors: true
+  tags: [deploy]
+
+# 18. Recreate specified service containers with new images (--no-deps to avoid pulling dependencies)
+- name: Recreate service containers
+  ansible.builtin.command:
+    cmd: docker compose up -d --no-deps --force-recreate {{ deploy_services_list | join(' ') }}
+    chdir: "{{ deploy_target_path }}"
+  when: deploy_services_list | length > 0
+  become: true
+  tags: [deploy]
+
+# 18. Ensure infrastructure services are running (traefik, postgres, redis - without restart)
+- name: Ensure infrastructure services are running
+  community.docker.docker_compose_v2:
+    project_src: "{{ deploy_target_path }}"
+    services:
+      - traefik
+      - postgres
+      - redis
+    state: present
+    recreate: never
+  become: true
+  tags: [deploy]
+
+# 19. Cleanup unused Docker images
+- name: Cleanup unused Docker images
+  community.docker.docker_prune:
+    images: true
+    images_filters:
+      dangling: false
+  become: true
+  tags: [deploy]
+
+# 20. Cleanup local deploy directory
+- name: Cleanup local deploy directory
+  ansible.builtin.file:
+    path: "{{ deploy_local_dir }}"
+    state: absent
+  delegate_to: localhost
+  become: false
+  tags: [deploy]

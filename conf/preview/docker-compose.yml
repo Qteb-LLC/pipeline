@@ -1,0 +1,177 @@
+---
+services:
+  traefik:
+    image: traefik:v2.11
+    container_name: traefik
+    command:
+      - --log.level=DEBUG
+      - --api.insecure=false
+      - --ping=true
+      - --providers.docker=true
+      - --providers.docker.exposedbydefault=false
+      - --entrypoints.web.address=:80
+      - --entrypoints.web.http.redirections.entrypoint.to=websecure
+      - --entrypoints.web.http.redirections.entrypoint.scheme=https
+      - --entrypoints.websecure.address=:443
+      - --certificatesresolvers.letsencrypt.acme.tlschallenge=true
+      - --certificatesresolvers.letsencrypt.acme.email=admin@mimirai.ru
+      - --certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - letsencrypt_data:/letsencrypt
+    networks:
+      - bot_network
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD", "traefik", "healthcheck", "--ping" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  migrations:
+    image: ghcr.io/qteb-llc/api:${API_VERSION:-latest}
+    container_name: migrations
+    env_file:
+      - ./bot.env
+    networks:
+      - bot_network
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: [ "python", "-m", "alembic", "upgrade", "head" ]
+    restart: "no"
+
+  bot:
+    image: ghcr.io/qteb-llc/bot:${BOT_VERSION:-latest}
+    container_name: bot
+    env_file:
+      - ./bot.env
+    volumes:
+      - ./subscriptions.yml:/opt/bot/subscriptions.yml:ro
+      - ./prompts.yml:/opt/bot/prompts.yml:ro
+    networks:
+      - bot_network
+    expose:
+      - "8080"
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.bot.rule=Host(`preview.bot.mimirai.ru`)
+      - traefik.http.routers.bot.entrypoints=websecure
+      - traefik.http.routers.bot.tls.certresolver=letsencrypt
+      - traefik.http.services.bot.loadbalancer.server.port=8080
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8080/health" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  api:
+    image: ghcr.io/qteb-llc/api:${API_VERSION:-latest}
+    container_name: api
+    command: [ "uvicorn", "src.api_main:app", "--host", "0.0.0.0", "--port", "8000" ]
+    env_file:
+      - ./bot.env
+    volumes:
+      - ./subscriptions.yml:/opt/bot/subscriptions.yml:ro
+      - ./prompts.yml:/opt/bot/prompts.yml:ro
+    networks:
+      - bot_network
+    expose:
+      - "8000"
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.api.rule=Host(`preview.api.mimirai.ru`)
+      - traefik.http.routers.api.entrypoints=websecure
+      - traefik.http.routers.api.tls.certresolver=letsencrypt
+      - traefik.http.services.api.loadbalancer.server.port=8000
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrations:
+        condition: service_completed_successfully
+      traefik:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8000/health" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  web:
+    image: ghcr.io/qteb-llc/web:${WEB_VERSION:-latest}
+    container_name: web
+    environment:
+      - NEXT_PUBLIC_API_URL=https://preview.api.mimirai.ru
+      - API_URL=https://preview.api.mimirai.ru
+      - BOT_USERNAME=mimir_preview_robot
+    networks:
+      - bot_network
+    expose:
+      - "3000"
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.web.rule=Host(`preview.mimirai.ru`)
+      - traefik.http.routers.web.entrypoints=websecure
+      - traefik.http.routers.web.tls.certresolver=letsencrypt
+      - traefik.http.services.web.loadbalancer.server.port=3000
+    depends_on:
+      traefik:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:3000" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: postgres
+    env_file:
+      - ./postgres.env
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - bot_network
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    networks:
+      - bot_network
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
+    name: postgres
+  letsencrypt_data:
+    name: letsencrypt
+  redis_data:
+    name: redis
+
+networks:
+  bot_network:
+    driver: bridge

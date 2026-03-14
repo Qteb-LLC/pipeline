@@ -12,11 +12,11 @@ on:
         required: true
         type: string
       services:
-        description: Comma-separated list of docker-compose services to pull and recreate (e.g. "api,migrations")
+        description: Comma-separated list of docker-compose services to pull and recreate
         required: true
         type: string
       version-var:
-        description: Version variable name to update in .env on server (e.g. "API_VERSION", "BOT_VERSION", "WEB_VERSION")
+        description: Version variable name to update in .env on server
         required: true
         type: string
 
@@ -31,27 +31,40 @@ jobs:
       name: ${{ inputs.environment }}
       url: ${{ inputs.environment == 'prod' && 'https://t.me/mimir_robot' || 'https://t.me/mimir_preview_robot' }}
     env:
-      ANSIBLE_ROLES_PATH: ${{ github.workspace }}/conf-repo/.cache/ansible-roles
+      ANSIBLE_ROLES_PATH: ${{ github.workspace }}/pipeline/.cache/ansible-roles
     steps:
-      - name: Checkout conf repo
+      - name: Checkout service repo (configs)
         uses: actions/checkout@v4
         with:
-          repository: Qteb-LLC/conf
-          path: conf-repo
+          path: service
+
+      - name: Checkout pipeline repo (ansible, utils, docker-compose)
+        uses: actions/checkout@v4
+        with:
+          repository: Qteb-LLC/pipeline
+          path: pipeline
           token: ${{ secrets.RELEASE_PAT || github.token }}
+
+      - name: Merge configs into pipeline workspace
+        run: |
+          # Copy service-specific configs into pipeline conf structure
+          cp -r service/conf/shared/* pipeline/conf/shared/ 2>/dev/null || true
+          cp -r service/conf/${{ inputs.environment }}/* pipeline/conf/${{ inputs.environment }}/ 2>/dev/null || true
+          # Copy .sops.yaml from service repo
+          cp service/.sops.yaml pipeline/ 2>/dev/null || true
 
       - name: Cache ansible deps + sops
         uses: actions/cache@v4
         with:
-          key: deploy-${{ hashFiles('conf-repo/ansible/requirements.yml') }}
+          key: deploy-${{ hashFiles('pipeline/ansible/requirements.yml') }}
           restore-keys: deploy-
           path: |
-            conf-repo/.cache/pip
-            conf-repo/.cache/ansible-roles
-            conf-repo/.cache/bin
+            pipeline/.cache/pip
+            pipeline/.cache/ansible-roles
+            pipeline/.cache/bin
 
       - name: Setup deploy tools
-        working-directory: conf-repo
+        working-directory: pipeline
         run: |
           sudo apt-get install -y --no-install-recommends gnupg openssh-client
           pip install --quiet ansible
@@ -66,7 +79,7 @@ jobs:
           ansible-galaxy collection install -r ansible/requirements.yml
 
       - name: Decrypt secrets
-        working-directory: conf-repo
+        working-directory: pipeline
         env:
           VAULT_KEY_PREVIEW: ${{ secrets.ANSIBLE_VAULT_KEY_PREVIEW }}
           VAULT_KEY_PROD: ${{ secrets.ANSIBLE_VAULT_KEY_PROD }}
@@ -80,7 +93,7 @@ jobs:
           bash utils/decrypt.sh
 
       - name: Run ansible
-        working-directory: conf-repo
+        working-directory: pipeline
         env:
           CI_REGISTRY: ghcr.io
           CI_REGISTRY_USER: ${{ github.actor }}

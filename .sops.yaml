@@ -1,0 +1,19 @@
+creation_rules:
+- path_regex: conf[/\\](local)[/\\].*
+  key_groups:
+  - pgp:
+    - AB8BF6368CAFDD266E42A4D0696435CDDDCF14FB
+    - 4921629E521C13BFF3FDEFDF5631D6D68D961F78
+    - 254DC25105A1ED7ABE23C8E6CE6A229211F2A4BC
+  unencrypted_regex: (username)
+- path_regex: conf[/\\](preview)[/\\].*
+  key_groups:
+  - pgp:
+    - 4921629E521C13BFF3FDEFDF5631D6D68D961F78
+    - 254DC25105A1ED7ABE23C8E6CE6A229211F2A4BC
+  unencrypted_regex: (username)
+- path_regex: conf[/\\](prod)[/\\].*
+  key_groups:
+  - pgp:
+    - 254DC25105A1ED7ABE23C8E6CE6A229211F2A4BC
+  unencrypted_regex: (username)

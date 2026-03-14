@@ -1,0 +1,21 @@
+all:
+  vars:
+    ansible_user: root
+    ansible_ssh_pipelining: true
+
+bot_backend_nodes:
+  children:
+    local:
+      hosts:
+        localhost:
+          ansible_host: localhost
+          ansible_connection: local
+          ansible_become: false
+    preview:
+      hosts:
+        mimir-ai-bot-preview:
+          ansible_host: bot-preview.mimirai.ru
+    prod:
+      hosts:
+        mimir-ai-bot-prod:
+          ansible_host: bot-prod.mimirai.ru
