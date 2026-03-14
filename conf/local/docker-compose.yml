@@ -30,7 +30,7 @@ services:
       dockerfile: docker/Dockerfile.api
     container_name: api
     env_file:
-      - ./bot.env
+      - ./api.env
     volumes:
       - ./subscriptions.yml:/opt/bot/subscriptions.yml:ro
       - ./prompts.yml:/opt/bot/prompts.yml:ro
