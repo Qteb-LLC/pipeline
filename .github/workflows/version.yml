@@ -1,0 +1,39 @@
+name: Version
+
+on:
+  workflow_call:
+    inputs:
+      branch:
+        description: Branch name (for PRs pass github.head_ref, for main pass github.ref_name)
+        type: string
+        required: false
+        default: ""
+    outputs:
+      semver:
+        description: Full SemVer version
+        value: ${{ jobs.version.outputs.semver }}
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      semver: ${{ steps.gitversion.outputs.semVer }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.branch || github.ref }}
+
+      - uses: gittools/actions/gitversion/setup@v1
+        with:
+          versionSpec: "5.x"
+
+      - uses: gittools/actions/gitversion/execute@v1
+        id: gitversion
+        with:
+          useConfigFile: true
+          configFilePath: GitVersion.yml
+          additionalArguments: ${{ inputs.branch && format('/b {0}', inputs.branch) || '' }}
+
+      - name: Display version
+        run: echo "Version ${{ steps.gitversion.outputs.semVer }}"

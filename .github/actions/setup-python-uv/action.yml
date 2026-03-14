@@ -1,0 +1,47 @@
+name: Setup Python + uv
+description: Install Python dependencies using uv with caching (mirrors .python-base from GitLab CI)
+
+inputs:
+  python-version:
+    description: Python version to use
+    default: "3.13"
+
+runs:
+  using: composite
+  steps:
+    - name: Cache Python dependencies
+      uses: actions/cache@v4
+      with:
+        key: ${{ runner.os }}-py${{ inputs.python-version }}-${{ hashFiles('pyproject.toml') }}
+        restore-keys: |
+          ${{ runner.os }}-py${{ inputs.python-version }}-
+        path: |
+          .cache/pip
+          .cache/uv
+          .venv/
+
+    - name: Install uv
+      run: pip install uv
+      shell: bash
+      env:
+        PIP_CACHE_DIR: .cache/pip
+
+    - name: Install dependencies
+      run: |
+        if [ -d ".venv" ] && [ -f ".venv/pyvenv.cfg" ]; then
+          echo "Restoring cached venv..."
+          source .venv/bin/activate
+          uv pip install -e ".[dev]" --quiet
+        else
+          echo "Creating new venv..."
+          uv venv .venv
+          source .venv/bin/activate
+          uv pip install -e ".[dev]"
+        fi
+      shell: bash
+      env:
+        UV_CACHE_DIR: .cache/uv
+
+    - name: Add venv to PATH
+      run: echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
+      shell: bash

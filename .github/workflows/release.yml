@@ -1,0 +1,45 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  version:
+    uses: ./.github/workflows/version.yml
+    with:
+      branch: ${{ github.ref_name }}
+
+  release:
+    needs: version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # PAT required so that the created tag triggers downstream workflows.
+          # Falls back to GITHUB_TOKEN if RELEASE_PAT is not configured.
+          token: ${{ secrets.RELEASE_PAT || github.token }}
+
+      - name: Extract changelog notes
+        run: |
+          if [ -f "CHANGELOG.md" ]; then
+            sed -n '/^## /,/^## /p' CHANGELOG.md | head -n -1 > notes.txt || echo "Release ${{ needs.version.outputs.semver }}" > notes.txt
+          else
+            echo "Release ${{ needs.version.outputs.semver }}" > notes.txt
+          fi
+
+      - name: Create tag + GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          token: ${{ secrets.RELEASE_PAT || github.token }}
+          tag_name: ${{ needs.version.outputs.semver }}
+          name: Release ${{ needs.version.outputs.semver }}
+          body_path: notes.txt

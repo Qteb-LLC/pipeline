@@ -1,0 +1,63 @@
+name: Lint and Test
+
+on:
+  workflow_call:
+
+jobs:
+  ruff-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-python-uv
+      - run: ruff check src/ tests/
+
+  ruff-format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-python-uv
+      - run: ruff format --check src/ tests/
+
+  mypy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-python-uv
+      - run: mypy src/
+
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: test
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      BOT_DATABASE_HOST: localhost
+      BOT_DATABASE_PORT: "5432"
+      BOT_DATABASE_NAME: test
+      BOT_DATABASE_USER: test
+      BOT_DATABASE_PASSWORD: test
+      BOT_TELEGRAM_BOT_TOKEN: "test:token"
+      BOT_LITELLM_BASE_URL: "http://localhost:4000"
+      BOT_LITELLM_MASTER_KEY: "test-key"
+      BOT_CLOUDPAYMENTS_PUBLIC_ID: "test"
+      BOT_CLOUDPAYMENTS_API_SECRET: "test"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-python-uv
+      - run: pytest --cov=src --cov-report=xml --cov-report=term
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage
+          path: coverage.xml

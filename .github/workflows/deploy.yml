@@ -1,0 +1,83 @@
+name: Deploy
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: Environment to deploy (preview or prod)
+        required: true
+        type: string
+      version:
+        description: Version to deploy
+        required: true
+        type: string
+
+env:
+  ANSIBLE_HOST_KEY_CHECKING: "false"
+  ANSIBLE_FORCE_COLOR: "true"
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: ${{ inputs.environment }}
+      url: ${{ inputs.environment == 'prod' && 'https://t.me/mimir_robot' || 'https://t.me/mimir_preview_robot' }}
+    env:
+      ANSIBLE_ROLES_PATH: ${{ github.workspace }}/.cache/ansible-roles
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache ansible deps + sops
+        uses: actions/cache@v4
+        with:
+          key: deploy-${{ hashFiles('ansible/requirements.yml') }}
+          restore-keys: deploy-
+          path: |
+            .cache/pip
+            .cache/ansible-roles
+            .cache/bin
+
+      - name: Setup deploy tools
+        run: |
+          sudo apt-get install -y --no-install-recommends gnupg openssh-client
+          pip install --quiet ansible
+          mkdir -p .cache/bin
+          if [ ! -f ".cache/bin/sops" ]; then
+            curl -sL https://github.com/getsops/sops/releases/download/v3.9.2/sops-v3.9.2.linux.amd64 \
+              -o .cache/bin/sops && chmod +x .cache/bin/sops
+          fi
+          export PATH="$PWD/.cache/bin:$PATH"
+          sops --version
+          ansible-galaxy role install -r ansible/requirements.yml
+          ansible-galaxy collection install -r ansible/requirements.yml
+
+      - name: Decrypt secrets
+        env:
+          VAULT_KEY_PREVIEW: ${{ secrets.ANSIBLE_VAULT_KEY_PREVIEW }}
+          VAULT_KEY_PROD: ${{ secrets.ANSIBLE_VAULT_KEY_PROD }}
+        run: |
+          if [ "${{ inputs.environment }}" = "prod" ]; then
+            echo "$VAULT_KEY_PROD" > utils/prod_vault.key
+          else
+            echo "$VAULT_KEY_PREVIEW" > utils/preview_vault.key
+          fi
+          export PATH="$PWD/.cache/bin:$PATH"
+          bash utils/decrypt.sh
+
+      - name: Run ansible
+        env:
+          CI_REGISTRY: ghcr.io
+          CI_REGISTRY_IMAGE: ghcr.io/${{ github.repository_owner }}/${{ github.event.repository.name }}
+          CI_REGISTRY_USER: ${{ github.actor }}
+          CI_REGISTRY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          export PATH="$PWD/.cache/bin:$PATH"
+          # GHCR requires lowercase image names
+          CI_REGISTRY_IMAGE=$(echo "$CI_REGISTRY_IMAGE" | tr '[:upper:]' '[:lower:]')
+          SSH_KEY="conf/${{ inputs.environment }}/id_rsa"
+          chmod 600 "$SSH_KEY"
+          ansible-playbook -i ansible/inventory.yaml ansible/play.yml \
+            -e "env=${{ inputs.environment }}" --private-key="$SSH_KEY"
+
+    timeout-minutes: 20
