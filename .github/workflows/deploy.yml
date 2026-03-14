@@ -30,7 +30,7 @@ jobs:
         with:
           repository: Qteb-LLC/conf
           path: conf-repo
-          token: ${{ secrets.CONF_PAT || github.token }}
+          token: ${{ secrets.RELEASE_PAT || github.token }}
 
       - name: Cache ansible deps + sops
         uses: actions/cache@v4
