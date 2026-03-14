@@ -2,34 +2,39 @@ name: Lint and Test
 
 on:
   workflow_call:
+    inputs:
+      needs-postgres:
+        description: Whether to start PostgreSQL service container for tests
+        type: boolean
+        default: true
 
 jobs:
   ruff-check:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: ./.github/actions/setup-python-uv
+      - uses: Qteb-LLC/pipeline/.github/actions/setup-python-uv@main
       - run: ruff check src/ tests/
 
   ruff-format:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: ./.github/actions/setup-python-uv
+      - uses: Qteb-LLC/pipeline/.github/actions/setup-python-uv@main
       - run: ruff format --check src/ tests/
 
   mypy:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: ./.github/actions/setup-python-uv
+      - uses: Qteb-LLC/pipeline/.github/actions/setup-python-uv@main
       - run: mypy src/
 
   test:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: postgres:16-alpine
+        image: ${{ inputs.needs-postgres && 'postgres:16-alpine' || '' }}
         env:
           POSTGRES_DB: test
           POSTGRES_USER: test
@@ -54,7 +59,7 @@ jobs:
       BOT_CLOUDPAYMENTS_API_SECRET: "test"
     steps:
       - uses: actions/checkout@v4
-      - uses: ./.github/actions/setup-python-uv
+      - uses: Qteb-LLC/pipeline/.github/actions/setup-python-uv@main
       - run: pytest --cov=src --cov-report=xml --cov-report=term
       - uses: actions/upload-artifact@v4
         if: always()

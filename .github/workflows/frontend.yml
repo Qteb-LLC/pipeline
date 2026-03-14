@@ -1,0 +1,50 @@
+name: Frontend Pipeline
+
+on:
+  workflow_call:
+    inputs:
+      dockerfile:
+        description: Path to Dockerfile
+        type: string
+        default: "Dockerfile"
+
+jobs:
+  # --- Version (always) ---
+  version:
+    uses: Qteb-LLC/pipeline/.github/workflows/version.yml@main
+    with:
+      branch: ${{ github.event_name == 'pull_request' && github.head_ref || '' }}
+
+  # --- PR / Tag: publish + deploy preview ---
+  publish:
+    if: github.event_name == 'pull_request' || startsWith(github.ref, 'refs/tags/')
+    needs: [version]
+    uses: Qteb-LLC/pipeline/.github/workflows/publish-web.yml@main
+    with:
+      dockerfile: ${{ inputs.dockerfile }}
+      version: ${{ needs.version.outputs.semver }}
+
+  deploy-preview:
+    if: github.event_name == 'pull_request' || startsWith(github.ref, 'refs/tags/')
+    needs: [publish, version]
+    uses: Qteb-LLC/pipeline/.github/workflows/deploy.yml@main
+    with:
+      environment: preview
+      version: ${{ needs.version.outputs.semver }}
+    secrets: inherit
+
+  # --- Push main: release (create tag) ---
+  release:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    uses: Qteb-LLC/pipeline/.github/workflows/release.yml@main
+    secrets: inherit
+
+  # --- Push tag: deploy prod ---
+  deploy-prod:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: [publish, version]
+    uses: Qteb-LLC/pipeline/.github/workflows/deploy.yml@main
+    with:
+      environment: prod
+      version: ${{ needs.version.outputs.semver }}
+    secrets: inherit

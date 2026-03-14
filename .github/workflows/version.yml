@@ -24,6 +24,13 @@ jobs:
           fetch-depth: 0
           ref: ${{ inputs.branch || github.ref }}
 
+      - uses: actions/checkout@v4
+        with:
+          repository: Qteb-LLC/pipeline
+          path: .pipeline
+          sparse-checkout: GitVersion.yml
+          sparse-checkout-cone-mode: false
+
       - uses: gittools/actions/gitversion/setup@v1
         with:
           versionSpec: "5.x"
@@ -32,7 +39,7 @@ jobs:
         id: gitversion
         with:
           useConfigFile: true
-          configFilePath: GitVersion.yml
+          configFilePath: .pipeline/GitVersion.yml
           additionalArguments: ${{ inputs.branch && format('/b {0}', inputs.branch) || '' }}
 
       - name: Display version

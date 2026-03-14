@@ -1,0 +1,31 @@
+mode: ContinuousDelivery
+tag-prefix: "[vV]?"
+major-version-bump-message: '\+semver:\s?(breaking|major)'
+minor-version-bump-message: '\+semver:\s?(feature|minor)'
+patch-version-bump-message: '\+semver:\s?(fix|bugfix|hotfix|patch)'
+no-bump-message: 'from\s?(none|skip|doc|tests)'
+commit-message-incrementing: Enabled
+branches:
+  main:
+    regex: ^main$
+    mode: ContinuousDelivery
+    tag: ""
+    increment: Patch
+    prevent-increment-of-merged-branch-version: true
+    is-release-branch: true
+    is-mainline: true
+    source-branches: []
+  feature:
+    regex: ^feature[/-].*$
+    mode: ContinuousDeployment
+    tag: "{BranchName}"
+    increment: Minor
+    source-branches:
+      - main
+  bugfix:
+    regex: ^bugfix[/-].*$
+    mode: ContinuousDeployment
+    tag: "{BranchName}"
+    increment: Patch
+    source-branches:
+      - main

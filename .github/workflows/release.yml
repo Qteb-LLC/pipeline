@@ -1,31 +1,22 @@
 name: Release
 
 on:
-  push:
-    branches:
-      - main
-
-permissions:
-  contents: write
-
-concurrency:
-  group: release-${{ github.ref }}
-  cancel-in-progress: true
+  workflow_call:
 
 jobs:
   version:
-    uses: ./.github/workflows/version.yml
+    uses: Qteb-LLC/pipeline/.github/workflows/version.yml@main
     with:
       branch: ${{ github.ref_name }}
 
   release:
     needs: version
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
         with:
-          # PAT required so that the created tag triggers downstream workflows.
-          # Falls back to GITHUB_TOKEN if RELEASE_PAT is not configured.
           token: ${{ secrets.RELEASE_PAT || github.token }}
 
       - name: Extract changelog notes
