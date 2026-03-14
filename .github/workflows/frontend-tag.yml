@@ -11,6 +11,10 @@ on:
         description: Docker-compose services to deploy (comma-separated)
         type: string
         default: "web"
+      version-var:
+        description: Version variable name for .env (e.g. WEB_VERSION)
+        type: string
+        default: "WEB_VERSION"
 
 jobs:
   version:
@@ -30,6 +34,7 @@ jobs:
       environment: preview
       version: ${{ needs.version.outputs.semver }}
       services: ${{ inputs.services }}
+      version-var: ${{ inputs.version-var }}
     secrets: inherit
 
   deploy-prod:
@@ -39,4 +44,5 @@ jobs:
       environment: prod
       version: ${{ needs.version.outputs.semver }}
       services: ${{ inputs.services }}
+      version-var: ${{ inputs.version-var }}
     secrets: inherit

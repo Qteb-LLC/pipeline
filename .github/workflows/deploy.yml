@@ -15,6 +15,10 @@ on:
         description: Comma-separated list of docker-compose services to pull and recreate (e.g. "api,migrations")
         required: true
         type: string
+      version-var:
+        description: Version variable name to update in .env on server (e.g. "API_VERSION", "BOT_VERSION", "WEB_VERSION")
+        required: true
+        type: string
 
 env:
   ANSIBLE_HOST_KEY_CHECKING: "false"
@@ -92,6 +96,7 @@ jobs:
           ansible-playbook -i ansible/inventory.yaml ansible/play.yml \
             -e "env=${{ inputs.environment }}" \
             -e "deploy_services=${{ inputs.services }}" \
+            -e "deploy_version_var=${{ inputs.version-var }}" \
             --private-key="$SSH_KEY"
 
     timeout-minutes: 20
