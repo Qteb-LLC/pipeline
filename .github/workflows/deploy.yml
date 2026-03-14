@@ -90,10 +90,12 @@ jobs:
           export PATH="$PWD/.cache/bin:$PATH"
           SSH_KEY="conf/${{ inputs.environment }}/id_rsa"
           chmod 600 "$SSH_KEY"
+          DEPLOY_IMAGE="ghcr.io/$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')"
           ansible-playbook -i ansible/inventory.yaml ansible/play.yml \
             -e "env=${{ inputs.environment }}" \
             -e "deploy_services=${{ inputs.services }}" \
             -e "deploy_version_var=${{ inputs.version-var }}" \
+            -e "deploy_image=$DEPLOY_IMAGE" \
             --private-key="$SSH_KEY"
 
     timeout-minutes: 20
