@@ -126,6 +126,8 @@
   ansible.builtin.find:
     paths: "{{ deploy_config_dir }}"
     file_type: file
+    patterns: "*.env,*.yml,*.yaml"
+    excludes: "credentials.yaml"
   register: env_config_files
   delegate_to: localhost
   become: false
