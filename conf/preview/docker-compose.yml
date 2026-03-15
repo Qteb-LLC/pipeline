@@ -52,9 +52,6 @@ services:
     env_file:
       - path: ./bot.env
         required: false
-    volumes:
-      - ./subscriptions.yml:/opt/bot/subscriptions.yml:ro
-      - ./prompts.yml:/opt/bot/prompts.yml:ro
     networks:
       - bot_network
     expose:
