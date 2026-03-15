@@ -4,6 +4,8 @@
   become: true
   roles:
     - role: geerlingguy.docker
+      vars:
+        docker_restart_handler_state: started
 
 - name: Deploy bot configuration
   hosts: "{{ env }}"
