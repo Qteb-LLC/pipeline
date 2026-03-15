@@ -36,7 +36,8 @@ services:
     image: ghcr.io/qteb-llc/api:${API_VERSION:-latest}
     container_name: migrations
     env_file:
-      - ./api.env
+      - path: ./api.env
+        required: false
     networks:
       - bot_network
     depends_on:
@@ -49,7 +50,8 @@ services:
     image: ghcr.io/qteb-llc/bot:${BOT_VERSION:-latest}
     container_name: bot
     env_file:
-      - ./bot.env
+      - path: ./bot.env
+        required: false
     volumes:
       - ./subscriptions.yml:/opt/bot/subscriptions.yml:ro
       - ./prompts.yml:/opt/bot/prompts.yml:ro
@@ -78,7 +80,8 @@ services:
     container_name: api
     command: [ "uvicorn", "src.api_main:app", "--host", "0.0.0.0", "--port", "8000" ]
     env_file:
-      - ./api.env
+      - path: ./api.env
+        required: false
     volumes:
       - ./subscriptions.yml:/opt/bot/subscriptions.yml:ro
       - ./prompts.yml:/opt/bot/prompts.yml:ro
@@ -139,7 +142,8 @@ services:
     image: postgres:16-alpine
     container_name: postgres
     env_file:
-      - ./postgres.env
+      - path: ./postgres.env
+        required: false
     volumes:
       - postgres_data:/var/lib/postgresql/data
     networks:

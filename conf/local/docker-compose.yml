@@ -6,7 +6,8 @@ services:
       dockerfile: docker/Dockerfile
     container_name: bot
     env_file:
-      - ./bot.env
+      - path: ./bot.env
+        required: false
     volumes:
       - ./subscriptions.yml:/opt/bot/subscriptions.yml:ro
       - ./prompts.yml:/opt/bot/prompts.yml:ro
@@ -30,7 +31,8 @@ services:
       dockerfile: docker/Dockerfile.api
     container_name: api
     env_file:
-      - ./api.env
+      - path: ./api.env
+        required: false
     volumes:
       - ./subscriptions.yml:/opt/bot/subscriptions.yml:ro
       - ./prompts.yml:/opt/bot/prompts.yml:ro
@@ -54,7 +56,8 @@ services:
     image: postgres:16-alpine
     container_name: postgres
     env_file:
-      - ./postgres.env
+      - path: ./postgres.env
+        required: false
     ports:
       - "5432:5432"
     volumes:
