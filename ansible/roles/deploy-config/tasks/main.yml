@@ -277,15 +277,6 @@
   ignore_errors: true
   tags: [deploy]
 
-# 18. Recreate specified service containers with new images (--no-deps to avoid pulling dependencies)
-- name: Recreate service containers
-  ansible.builtin.command:
-    cmd: docker compose up -d --no-deps --force-recreate {{ deploy_services_list | join(' ') }}
-    chdir: "{{ deploy_target_path }}"
-  when: deploy_services_list | length > 0
-  become: true
-  tags: [deploy]
-
 # 18. Ensure infrastructure services are running (traefik, postgres, redis - without restart)
 - name: Ensure infrastructure services are running
   community.docker.docker_compose_v2:
@@ -296,10 +287,21 @@
       - redis
     state: present
     recreate: never
+    wait: true
+    wait_timeout: 60
   become: true
   tags: [deploy]
 
-# 19. Cleanup unused Docker images
+# 19. Recreate specified service containers with new images (--no-deps to avoid pulling dependencies)
+- name: Recreate service containers
+  ansible.builtin.command:
+    cmd: docker compose up -d --no-deps --force-recreate {{ deploy_services_list | join(' ') }}
+    chdir: "{{ deploy_target_path }}"
+  when: deploy_services_list | length > 0
+  become: true
+  tags: [deploy]
+
+# 20. Cleanup unused Docker images
 - name: Cleanup unused Docker images
   community.docker.docker_prune:
     images: true
@@ -308,7 +310,7 @@
   become: true
   tags: [deploy]
 
-# 20. Cleanup local deploy directory
+# 21. Cleanup local deploy directory
 - name: Cleanup local deploy directory
   ansible.builtin.file:
     path: "{{ deploy_local_dir }}"
