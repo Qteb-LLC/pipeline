@@ -83,12 +83,21 @@
   tags: [render, deploy, debug]
 
 # 4. Load credentials ONLY from env (never from shared)
+- name: Check if credentials.yaml exists
+  ansible.builtin.stat:
+    path: "{{ env_config_dir }}/credentials.yaml"
+  register: credentials_file_stat
+  delegate_to: localhost
+  become: false
+  tags: [render, deploy, debug]
+
 - name: Load credentials configuration (env only)
   ansible.builtin.include_vars:
     file: "{{ env_config_dir }}/credentials.yaml"
     name: credentials_data
   delegate_to: localhost
   become: false
+  when: credentials_file_stat.stat.exists
   tags: [render, deploy, debug]
 
 - name: Set credentials fact
