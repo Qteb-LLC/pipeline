@@ -104,17 +104,11 @@ jobs:
           SSH_KEY="conf/${{ inputs.environment }}/id_rsa"
           chmod 600 "$SSH_KEY"
           DEPLOY_IMAGE="ghcr.io/$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')"
-          VAULT_KEY_FILE=$(ls utils/*vault.key 2>/dev/null | head -1)
-          VAULT_ARGS=""
-          if [ -n "$VAULT_KEY_FILE" ]; then
-            VAULT_ARGS="--vault-password-file $VAULT_KEY_FILE"
-          fi
           ansible-playbook -i ansible/inventory.yaml ansible/play.yml \
             -e "env=${{ inputs.environment }}" \
             -e "deploy_services=${{ inputs.services }}" \
             -e "deploy_version_var=${{ inputs.version-var }}" \
             -e "deploy_image=$DEPLOY_IMAGE" \
-            $VAULT_ARGS \
             --private-key="$SSH_KEY"
 
     timeout-minutes: 20
