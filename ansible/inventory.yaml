@@ -14,8 +14,8 @@ bot_backend_nodes:
     preview:
       hosts:
         mimir-ai-bot-preview:
-          ansible_host: bot-preview.mimirai.ru
+          ansible_host: preview.mimirai.ru
     prod:
       hosts:
         mimir-ai-bot-prod:
-          ansible_host: bot-prod.mimirai.ru
+          ansible_host: mimirai.ru
