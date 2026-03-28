@@ -68,11 +68,13 @@ services:
       api:
         condition: service_healthy
     restart: unless-stopped
+    stop_grace_period: 30s
     healthcheck:
       test: [ "CMD", "curl", "-f", "http://localhost:8080/health" ]
-      interval: 30s
-      timeout: 10s
+      interval: 10s
+      timeout: 5s
       retries: 3
+      start_period: 15s
 
   api:
     image: ghcr.io/qteb-llc/api:${API_VERSION:-latest}
@@ -104,11 +106,13 @@ services:
       traefik:
         condition: service_healthy
     restart: unless-stopped
+    stop_grace_period: 30s
     healthcheck:
       test: [ "CMD", "curl", "-f", "http://localhost:8000/health" ]
-      interval: 30s
-      timeout: 10s
+      interval: 10s
+      timeout: 5s
       retries: 3
+      start_period: 30s
 
   web:
     image: ghcr.io/qteb-llc/web:${WEB_VERSION:-latest}
@@ -131,11 +135,13 @@ services:
       traefik:
         condition: service_healthy
     restart: unless-stopped
+    stop_grace_period: 15s
     healthcheck:
       test: [ "CMD", "curl", "-f", "http://localhost:3000" ]
-      interval: 30s
-      timeout: 10s
+      interval: 10s
+      timeout: 5s
       retries: 3
+      start_period: 30s
 
   postgres:
     image: postgres:16-alpine
