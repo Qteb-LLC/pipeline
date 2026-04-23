@@ -83,6 +83,8 @@ services:
     env_file:
       - path: ./api.env
         required: false
+    environment:
+      - QDRANT_URL=http://qdrant:6333
     volumes:
       - ./subscriptions.yml:/opt/bot/subscriptions.yml:ro
       - ./prompts.yml:/opt/bot/prompts.yml:ro
@@ -104,6 +106,8 @@ services:
       migrations:
         condition: service_completed_successfully
       traefik:
+        condition: service_healthy
+      qdrant:
         condition: service_healthy
     restart: unless-stopped
     stop_grace_period: 30s
@@ -177,6 +181,23 @@ services:
       timeout: 5s
       retries: 5
 
+  qdrant:
+    image: qdrant/qdrant:v1.13.6
+    container_name: qdrant
+    volumes:
+      - qdrant_data:/qdrant/storage
+    networks:
+      - bot_network
+    expose:
+      - "6333"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6333/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
 volumes:
   postgres_data:
     name: postgres
@@ -184,6 +205,8 @@ volumes:
     name: letsencrypt
   redis_data:
     name: redis
+  qdrant_data:
+    name: qdrant
 
 networks:
   bot_network:
