@@ -292,6 +292,19 @@
   become: true
   tags: [deploy]
 
+# 18b. Ensure qdrant is running; recreate if docker-compose.yml config changed
+- name: Ensure qdrant is running (recreate on config change)
+  community.docker.docker_compose_v2:
+    project_src: "{{ deploy_target_path }}"
+    services:
+      - qdrant
+    state: present
+    recreate: auto
+    wait: true
+    wait_timeout: 60
+  become: true
+  tags: [deploy]
+
 # 19. Recreate specified service containers with new images (--no-deps to avoid pulling dependencies)
 - name: Recreate service containers
   ansible.builtin.command:
