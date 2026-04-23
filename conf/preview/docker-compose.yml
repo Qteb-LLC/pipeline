@@ -84,7 +84,7 @@ services:
       - path: ./api.env
         required: false
     environment:
-      - QDRANT_URL=http://qdrant:6333
+      - BOT_QDRANT_URL=http://qdrant:6333
     volumes:
       - ./subscriptions.yml:/opt/bot/subscriptions.yml:ro
       - ./prompts.yml:/opt/bot/prompts.yml:ro
