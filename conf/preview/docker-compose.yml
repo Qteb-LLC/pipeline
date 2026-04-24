@@ -86,6 +86,10 @@ services:
     volumes:
       - ./subscriptions.yml:/opt/bot/subscriptions.yml:ro
       - ./prompts.yml:/opt/bot/prompts.yml:ro
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
     networks:
       - bot_network
     expose:
